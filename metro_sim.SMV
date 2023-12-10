@@ -90,3 +90,19 @@ VAR
 	train_location : train_location(train_boarding.train_boarding_status, train_doors.train_doors_status, train_fullness.train_fullness_status);
 	train_doors : train_doors(train_boarding.train_boarding_status, train_location.train_location_status, passengers.passengers_status, train_fullness.train_fullness_status);
 	train_boarding : train_boarding(train_doors.train_doors_status, passengers.passengers_status, train_location.train_location_status);	
+	
+	
+-- LTL
+-- без посадки не может уехать с пассажирами – не может быть не на станции и с пассажирами
+LTLSPEC !(train_fullness.train_fullness_status = has_passengers & train_boarding.train_boarding_status = no_boarding & train_location.train_location_status = not_on_station & Y (train_boarding.train_boarding_status = no_boarding & train_location.train_location_status = on_station))
+-- из пустого поезда не могут выходить пассажиры
+LTLSPEC !(train_fullness.train_fullness_status = empty & passengers.passengers_status = exiting & Y (train_fullness.train_fullness_status = empty & passengers.passengers_status = exiting))
+-- CTL
+-- Поезд всегда находится не на станции только меньше, чем два состояния подряд
+SPEC AG (train_location.train_location_status = not_on_station -> AF train_location.train_location_status = on_station)
+-- пассажиры не могут входить или выходить при поезде не на станции
+SPEC AG !(passengers.passengers_status != idle & train_location.train_location_status = not_on_station)
+-- пассажиры не могут входить или выходить при закрытых дверях
+SPEC AG !(passengers.passengers_status != idle & train_doors.train_doors_status = closed)
+-- поезд не может быть не на станции с открытыми дверями
+SPEC AG !(train_location.train_location_status = not_on_station & train_doors.train_doors_status = open)
