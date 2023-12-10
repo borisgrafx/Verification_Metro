@@ -1,0 +1,92 @@
+MODULE train_location(train_boarding_status, train_doors_status, train_fullness_status)
+VAR
+	train_location_status : {on_station, not_on_station};
+ASSIGN
+	init(train_location_status) := not_on_station;
+	-- Дефолтно поезд едет в туннеле
+	next(train_location_status) := case
+						train_location_status = not_on_station : on_station;
+						-- ЕСЛИ не на станции => на станции
+						train_location_status = on_station & ((train_boarding_status = no_boarding & train_fullness_status = empty) | train_boarding_status = finish_boarding) & train_doors_status = closed : not_on_station;
+						-- ЕСЛИ на станции И ((без погрузки И пустой) ИЛИ конец погрузки) И закрыты => не на станции
+						TRUE : train_location_status;
+					esac;
+
+MODULE train_boarding(train_doors_status, passengers_status, train_location_status)
+VAR
+	train_boarding_status : {for_boarding, no_boarding, finish_boarding};
+ASSIGN
+	init(train_boarding_status) := for_boarding;
+	-- Дефолтно на поезд будет совершаться посадка пассажиров
+	next(train_boarding_status) := case
+						train_boarding_status = for_boarding & train_doors_status = open & passengers_status = idle: finish_boarding;
+						-- ЕСЛИ для погрузки И открыты И бездействуют => конец погрузки
+						train_boarding_status = finish_boarding & train_location_status = not_on_station : no_boarding;
+						-- ЕСЛИ конец погрузки И не на станции => без погрузки
+						train_boarding_status = no_boarding & train_location_status = not_on_station : for_boarding;
+						-- ЕСЛИ без погрузки И не на станции => для погрузки
+						TRUE : train_boarding_status;
+					esac;
+					
+MODULE train_doors(train_boarding_status, train_location_status, passengers_status, train_fullness_status)
+VAR
+	train_doors_status : {closed, open};
+ASSIGN
+	init(train_doors_status) := closed;
+	-- Дефолтно двери поезда закрыты
+	next(train_doors_status) := case
+						train_doors_status = closed & train_boarding_status = for_boarding & train_location_status = on_station : open;
+						-- ЕСЛИ закрыты И для погрузки И на станции => открыты
+						train_doors_status = open & (train_boarding_status = finish_boarding | (train_boarding_status = no_boarding & train_fullness_status = empty)) & passengers_status = idle : closed;
+						-- ЕСЛИ открыты И (конец погрузки ИЛИ (без погрузки И пустой)) И бездействуют => закрыты
+						train_doors_status = closed & train_location_status = on_station & train_boarding_status = no_boarding & train_fullness_status = has_passengers : open;
+						-- ЕСЛИ закрыты И на станции И без погрузки И с пассажирами => открыты
+						TRUE : train_doors_status;
+					esac;
+					
+
+MODULE passengers(train_doors_status, train_location_status, train_boarding_status, train_fullness_status)
+VAR
+	passengers_status : {entering, exiting, idle};
+ASSIGN
+	init(passengers_status) := idle;
+	-- Пассажиры бездействуют, пока не будут иметь возможность погружаться или сходить с поезда
+	next(passengers_status) := case
+						passengers_status != idle & (train_doors_status = closed | train_location_status = not_on_station) : idle;
+						-- ЕСЛИ закрыты ИЛИ не на станции => бездействуют
+						passengers_status = idle & train_location_status = on_station & train_boarding_status = for_boarding & train_fullness_status = has_passengers & train_doors_status = open : exiting;
+						-- ЕСЛИ бездействуют И на станции И для погрузки И с пассажирами И открыты => выходят
+						(passengers_status = exiting | train_fullness_status = empty) & train_location_status = on_station & train_doors_status = open & train_boarding_status != no_boarding: entering;
+						-- ЕСЛИ (выходят ИЛИ пустой) И на станции И для погрузки И открыты И НЕ без погрузки=> входят
+						passengers_status = entering : idle;
+						-- ЕСЛИ входят И на станции И для погрузки И открыты => бездействуют 
+						passengers_status != exiting & train_doors_status = open & train_boarding_status = no_boarding & train_fullness_status = has_passengers : exiting;
+						-- ЕСЛИ НЕ выходят И открыты И без погрузки И с пассажирами => выходят
+						passengers_status = exiting & train_fullness_status = empty : idle;
+						-- ЕСЛИ выходят И пустой => бездействуют
+						TRUE : passengers_status;
+					esac;
+
+MODULE train_fullness(passengers_status, train_boarding_status)
+VAR
+	train_fullness_status : {empty, has_passengers};
+ASSIGN
+	init(train_fullness_status) := has_passengers;
+	-- Дефолтно поезд не пустой
+	next(train_fullness_status) := case
+						train_fullness_status = empty & passengers_status = entering : has_passengers;
+						-- ЕСЛИ входят => с пассажирами
+						train_fullness_status = has_passengers & train_boarding_status = no_boarding & passengers_status = exiting : empty;
+						-- ЕСЛИ без погрузки И с пассажирами И выходят => пустой
+						TRUE : train_fullness_status;
+					esac;
+					
+
+
+MODULE main()
+VAR
+	passengers : passengers(train_doors.train_doors_status, train_location.train_location_status, train_boarding.train_boarding_status, train_fullness.train_fullness_status);
+	train_fullness : train_fullness(passengers.passengers_status, train_boarding.train_boarding_status);
+	train_location : train_location(train_boarding.train_boarding_status, train_doors.train_doors_status, train_fullness.train_fullness_status);
+	train_doors : train_doors(train_boarding.train_boarding_status, train_location.train_location_status, passengers.passengers_status, train_fullness.train_fullness_status);
+	train_boarding : train_boarding(train_doors.train_doors_status, passengers.passengers_status, train_location.train_location_status);	
